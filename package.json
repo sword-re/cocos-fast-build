@@ -1,0 +1,55 @@
+{
+  "name": "cocos-fast-build",
+  "version": "0.1.0",
+  "private": true,
+  "description": "脱离编辑器的 Cocos Creator 2.x 小游戏快速构建管线(资源装配 + 脚本打包 + swc 压缩)",
+  "type": "module",
+  "bin": {
+    "cocos-fast-build": "bin/cocos-fast-build.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "data",
+    "tsconfig.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "cfb": "tsx src/cli.ts",
+    "minify": "tsx src/spikes/minify-run.ts",
+    "spike1": "tsx src/spikes/spike1.ts",
+    "spike1b": "tsx src/spikes/spike1b.ts",
+    "spike2": "tsx src/spikes/spike2.ts",
+    "spike2:batch": "tsx src/spikes/spike2-batch.ts",
+    "spike3": "tsx src/spikes/spike3.ts",
+    "validate:all": "tsx src/spikes/validate-all.ts",
+    "verify:build": "tsx src/spikes/verify-build.ts",
+    "test:uuid": "tsx src/spikes/test-uuid.ts",
+    "samples": "tsx src/spikes/list-samples.ts",
+    "atlas:coverage": "tsx src/spikes/atlas-coverage.ts",
+    "atlas:verify": "tsx src/spikes/atlas-verify.ts",
+    "bundles:check": "tsx src/spikes/bundles-check.ts",
+    "crawl:check": "tsx src/spikes/crawl-check.ts",
+    "crawl:validate": "tsx src/spikes/crawl-validate.ts",
+    "owner:rule": "tsx src/spikes/owner-rule.ts",
+    "owner:rule2": "tsx src/spikes/owner-rule2.ts",
+    "scripts:pack": "tsx src/spikes/scripts-pack.ts",
+    "game:template": "tsx src/spikes/game-template.ts",
+    "atlas:pack": "tsx src/spikes/atlas-pack.ts",
+    "build:all": "tsx src/spikes/build-all.ts",
+    "verify:regression": "tsx src/spikes/regression.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@swc/core": "^1.15.43",
+    "sharp": "^0.35.2",
+    "ts413": "npm:typescript@4.1.3",
+    "tsx": "^4.7.0"
+  }
+}
