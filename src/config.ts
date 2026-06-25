@@ -29,6 +29,8 @@ export interface ProjectConfig {
     libVersion: string;
     /** game.js 启动注入(项目特定 plugin 全局) */
     bootExtras: BootExtra[];
+    /** 远程 bundle 上传命令(CI);CLI --remote-upload-cmd 优先。详见 orchestrate.RunOptions */
+    remoteUploadCmd?: string;
 }
 
 const DEFAULTS: Omit<ProjectConfig, "projectName"> = {
@@ -57,6 +59,7 @@ export function projectConfig(): ProjectConfig {
         projectName,
         libVersion: fileCfg.libVersion || DEFAULTS.libVersion,
         bootExtras: fileCfg.bootExtras || DEFAULTS.bootExtras,
+        remoteUploadCmd: fileCfg.remoteUploadCmd,
     };
     return _cfg;
 }
