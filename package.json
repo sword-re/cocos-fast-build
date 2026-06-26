@@ -40,14 +40,20 @@
     "game:template": "tsx src/spikes/game-template.ts",
     "atlas:pack": "tsx src/spikes/atlas-pack.ts",
     "build:all": "tsx src/spikes/build-all.ts",
-    "verify:regression": "tsx src/spikes/regression.ts"
+    "verify:regression": "tsx src/spikes/regression.ts",
+    "import:check": "tsx src/spikes/import-check.ts",
+    "import:coverage": "tsx src/spikes/import-coverage.ts",
+    "effect:check": "tsx src/spikes/effect-check.ts",
+    "snapshot:builtins": "tsx src/spikes/snapshot-builtins.ts"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.0",
     "typescript": "^5.4.0"
   },
   "dependencies": {
     "@swc/core": "^1.15.43",
+    "js-yaml": "^4.1.0",
     "sharp": "^0.35.2",
     "ts413": "npm:typescript@4.1.3",
     "tsx": "^4.7.0"

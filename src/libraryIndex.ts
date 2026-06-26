@@ -1,11 +1,15 @@
 /**
- * library/imports 的统一索引(一趟读盘,可并行解析)。
+ * 资源对象的统一索引(import 模块为主源,library/imports 为回退)。
  *
- * 原先 typeFromImport(每个 asset 一次)与 directDeps(图遍历每个可达资源一次)各自
- * read+parse 同一批 library import;nativeExtOf 还对每个 uuid 做一次 readdirSync(实际只有
- * ~258 个桶)。此模块:
- *  - 把 258 个桶 readdir 一次,得到 import json 路径表 + native 扩展名表;
- *  - 并行 read+parse 全部 import json,抽出 { type, name, deps },供图遍历/类型查询内存命中。
+ * 【M2 接线切换】本模块的三个出口(rawImport / importMap / nativeExtMap)原先全部从
+ * cocos 编辑器预导入的 library/imports 取数。现改为:
+ *  - 主源:import 模块(src/import,从 assets 源 + .meta 自生成,见 docs/09)覆盖的 uuid;
+ *  - 回退:import 尚未实现的类型(effect/spine/bitmap-font/plist 图集/引擎内置无 meta 资源)
+ *    才读 library/imports —— 且**只解析未被 import 覆盖的那部分** json(减少 library 读盘)。
+ * import 覆盖率随 M3/M4 推进而升,library 回退趋零;全部覆盖后即可彻底删除 library 读。
+ *
+ * toRec() 从对象抽 { type, name, deps },对 import 对象与 library 对象同构,故 crawl/assetGraph
+ * 的依赖图/类型查询逻辑零改动。
  *
  * 同步/异步双模:primeLibraryIndex() 构建前并行预热;importMap()/nativeExtMap() 同步取,
  * 未预热则单线程回退,保证任何调用路径都正确。
@@ -14,6 +18,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { LIBRARY_IMPORTS, libraryImportPath } from "./paths.js";
 import { parseFiles } from "./parallelParse.js";
+import { importAll } from "./import/index.js";
 
 export interface ImportRec {
     /** library import 的 __type__(无则 null) */
@@ -83,43 +88,88 @@ function toRec(uuid: string, data: any): ImportRec {
 
 let _importMap: Map<string, ImportRec> | null = null;
 let _nativeExt: Map<string, string> | null = null;
-/** 原始解析后的 import json(供 assemble 序列化复用,免去第三次读盘) */
+/** 原始解析后的资源对象(import 为主 + library 回退;供 assemble 序列化复用) */
 let _raw: Map<string, any> | null = null;
+/** 数据来源统计(供 import:coverage 报告) */
+let _coverage: { fromImport: number; fromLibrary: number } = { fromImport: 0, fromLibrary: 0 };
+
+/**
+ * 合并 import 模块(主源)与已解析的 library 回退对象,装配最终三表。
+ * @param libParsed 已解析的 library 回退对象(只含未被 import 覆盖的 uuid)
+ * @param libNativeExt scanBuckets 得到的 native 扩展名表(覆盖全部 library native)
+ */
+function assembleMaps(libParsed: Map<string, any>, libNativeExt: Map<string, string>): void {
+    const map = new Map<string, ImportRec>();
+    const raw = new Map<string, any>();
+    const nativeExt = new Map(libNativeExt);
+
+    // 主源:import 模块产出的中间对象
+    let fromImport = 0;
+    for (const [uuid, res] of importAll()) {
+        raw.set(uuid, res.object);
+        map.set(uuid, toRec(uuid, res.object));
+        if (res.native?.kind === "flat") nativeExt.set(uuid, res.native.ext);
+        fromImport++;
+    }
+    // 回退:import 未覆盖的 library 对象
+    let fromLibrary = 0;
+    for (const [uuid, data] of libParsed) {
+        if (raw.has(uuid)) continue;
+        raw.set(uuid, data);
+        map.set(uuid, toRec(uuid, data));
+        fromLibrary++;
+    }
+    _importMap = map;
+    _nativeExt = nativeExt;
+    _raw = raw;
+    _coverage = { fromImport, fromLibrary };
+}
+
+/** import 覆盖的 uuid 集(用于跳过 library 中已覆盖部分的解析) */
+function coveredUuids(): Set<string> {
+    return new Set(importAll().keys());
+}
 
 function buildSync(): void {
     const { uuids, paths, nativeExt } = scanBuckets();
-    const map = new Map<string, ImportRec>();
-    const raw = new Map<string, any>();
+    const covered = coveredUuids();
+    const libParsed = new Map<string, any>();
     for (let i = 0; i < paths.length; i++) {
-        let data: any;
+        if (covered.has(uuids[i])) continue; // import 已覆盖:不读 library
         try {
-            data = JSON.parse(readFileSync(paths[i], "utf8"));
+            libParsed.set(uuids[i], JSON.parse(readFileSync(paths[i], "utf8")));
         } catch {
-            continue;
+            /* 跳过坏 json */
         }
-        map.set(uuids[i], toRec(uuids[i], data));
-        raw.set(uuids[i], data);
     }
-    _importMap = map;
-    _nativeExt = nativeExt;
-    _raw = raw;
+    assembleMaps(libParsed, nativeExt);
 }
 
-/** 预热:并行 read+parse 全部 import json(构建前调用) */
+/** 预热:并行 read+parse library 回退 json(仅未被 import 覆盖的部分) */
 export async function primeLibraryIndex(): Promise<void> {
     if (_importMap) return;
     const { uuids, paths, nativeExt } = scanBuckets();
-    const parsed = await parseFiles(paths);
-    const map = new Map<string, ImportRec>();
-    const raw = new Map<string, any>();
+    const covered = coveredUuids();
+    const idx: number[] = [];
+    const toParse: string[] = [];
     for (let i = 0; i < paths.length; i++) {
-        if (parsed[i] == null) continue;
-        map.set(uuids[i], toRec(uuids[i], parsed[i]));
-        raw.set(uuids[i], parsed[i]);
+        if (covered.has(uuids[i])) continue;
+        idx.push(i);
+        toParse.push(paths[i]);
     }
-    _importMap = map;
-    _nativeExt = nativeExt;
-    _raw = raw;
+    const parsed = await parseFiles(toParse);
+    const libParsed = new Map<string, any>();
+    for (let j = 0; j < toParse.length; j++) {
+        if (parsed[j] == null) continue;
+        libParsed.set(uuids[idx[j]], parsed[j]);
+    }
+    assembleMaps(libParsed, nativeExt);
+}
+
+/** 数据来源统计:import 主源命中数 vs library 回退数 */
+export function importSourceCoverage(): { fromImport: number; fromLibrary: number } {
+    if (!_importMap) buildSync();
+    return _coverage;
 }
 
 /**

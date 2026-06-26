@@ -9,9 +9,13 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** 一个目录是否像 cocos 项目根 */
+/**
+ * 一个目录是否像 cocos 项目根。
+ * 判据:含 assets/ 且含 settings/(project 配置)—— 不再要求 library/imports/,
+ * 因为脱离编辑器后构建不依赖 library(资源由 import 模块 + 内置快照产出)。
+ */
 function isCocosProjectRoot(dir: string): boolean {
-    return existsSync(resolve(dir, "assets")) && existsSync(resolve(dir, "library/imports"));
+    return existsSync(resolve(dir, "assets")) && (existsSync(resolve(dir, "settings")) || existsSync(resolve(dir, "library/imports")));
 }
 
 function findProjectRoot(): string {

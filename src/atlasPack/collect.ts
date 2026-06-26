@@ -4,25 +4,15 @@
  * - 作用域:.pac.meta(importer="auto-atlas")所在目录子树。深目录优先(就近归属)。
  * - 成员:作用域内 importer="texture" && type="sprite" && packable 的纹理 .meta,
  *   其 subMetas 里 importer="sprite-frame" 的帧。trim 几何直接取自 subMeta(编辑器已算好)。
- * - 源图:library/imports/<sub>/<texUuid>.<ext>(原始纹理 native)。
+ * - 源图:texture .meta 旁的原始图片(<image>.png,已验证与 library native 字节一致),脱离 library。
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { LIBRARY_IMPORTS, PROJECT_ROOT } from "../paths.js";
+import { PROJECT_ROOT } from "../paths.js";
 import type { PacConfig, PackItem } from "./types.js";
 
 const ASSETS = join(PROJECT_ROOT, "assets");
-
-/** library 里某 texture uuid 的 native 原始文件绝对路径(非 .json 同名文件);无则 null */
-function libraryNativePath(uuid: string): string | null {
-    const dir = join(LIBRARY_IMPORTS, uuid.slice(0, 2));
-    if (!existsSync(dir)) return null;
-    for (const name of readdirSync(dir)) {
-        if (name.startsWith(uuid + ".") && !name.endsWith(".json")) return join(dir, name);
-    }
-    return null;
-}
 
 /** 扫描全工程,返回所有 auto-atlas 作用域(深目录优先) */
 export function discoverPacs(): PacConfig[] {
@@ -92,8 +82,8 @@ export function collectItems(pac: PacConfig, pacs: PacConfig[]): PackItem[] {
                 }
                 if (m.importer !== "texture" || m.type !== "sprite" || !m.packable || !m.uuid) continue;
                 if (!m.subMetas) continue;
-                const srcPng = libraryNativePath(m.uuid);
-                if (!srcPng) continue; // 无 library native,无法合成,跳过(交由散图路径兜底)
+                const srcPng = p.slice(0, -".meta".length); // .meta 旁的源图(<image>.png)
+                if (!existsSync(srcPng)) continue; // 源图缺失,跳过(交由散图路径兜底)
                 const hash = createHash("md5").update(readFileSync(srcPng)).digest("hex").slice(0, 16);
                 for (const k in m.subMetas) {
                     const sm = m.subMetas[k];

@@ -15,6 +15,7 @@ import { assetMetaMap } from "./assetMeta.js";
 import { atlasPages } from "./atlas.js";
 import { atlasMembers, bundleOf } from "./assetGraph.js";
 import { rawImport, nativeExtMap } from "./libraryIndex.js";
+import { importAsset } from "./import/index.js";
 import { compressUuid } from "./uuid.js";
 import { serializeAsset } from "./serialize/index.js";
 import { serializeSpriteAtlas } from "./serialize/spriteAtlas.js";
@@ -126,9 +127,8 @@ export async function assembleBundle(name: string, outRoot: string): Promise<Ass
         importCount++;
     };
     // suffix:扁平资源(纹理/音频)为扩展名 ".png";原名文件资源(字体等)为 "/原文件名"
-    // → 目录布局 native/<sub>/<uuid>.<md5>/<原文件名>。读源字节算 md5 后直接写出(免二次读)。
-    const copyNative = (uuid: string, idx: number, src: string, suffix: string) => {
-        const buf = readFileSync(src);
+    // → 目录布局 native/<sub>/<uuid>.<md5>/<原文件名>。算 md5 后直接写出(免二次读)。
+    const writeNative = (uuid: string, idx: number, buf: Buffer, suffix: string) => {
         const nmd5 = md5hex5(buf);
         const sub = uuid.slice(0, 2);
         const dest = join(nativeDir, sub, `${uuid}.${nmd5}${suffix}`);
@@ -136,6 +136,20 @@ export async function assembleBundle(name: string, outRoot: string): Promise<Ass
         writes.push({ path: dest, data: buf });
         nativeVersions.push(idx, nmd5);
         nativeCount++;
+    };
+    const copyNative = (uuid: string, idx: number, src: string, suffix: string) => {
+        writeNative(uuid, idx, readFileSync(src), suffix);
+    };
+    /**
+     * import 模块覆盖的资源:native 直接取自 import 产物(脱离 library)。
+     * flat → 扩展名后缀(.png/.mp3);dir → "/原文件名"(字体)。返回是否已处理。
+     */
+    const tryImportNative = (uuid: string, idx: number): boolean => {
+        const nat = importAsset(uuid)?.native;
+        if (!nat) return false;
+        const buf = Buffer.isBuffer(nat.source) ? nat.source : readFileSync(nat.source);
+        writeNative(uuid, idx, buf, nat.kind === "flat" ? nat.ext : `/${nat.filename}`);
+        return true;
     };
 
 
@@ -187,11 +201,15 @@ export async function assembleBundle(name: string, outRoot: string): Promise<Ass
         // 引擎内置资源(internal)无项目 meta,从 library import 派生路径/类型/native
         const resolved = meta ?? builtinMeta(lib);
 
-        // native 布局由 _native 决定:
+        // native:import 模块覆盖的(纹理/音频/字体)直接取自源,脱离 library;否则回退 library 布局。
+        if (tryImportNative(uuid, idx)) {
+            // 已由 import 产物写出
+        }
+        // native 布局由 _native 决定(library 回退):
         //  - 完整文件名(不以 . 开头,如字体 "X.ttf")→ 目录布局,源在 library/imports/<sub>/<uuid>/<文件名>
         //  - 扩展名(".mp3"/".plist")或无 _native(纹理由 meta 推扩展名)→ 扁平 <uuid>.<md5><ext>
-        const nativeName = typeof lib?._native === "string" ? lib._native : "";
-        if (nativeName && !nativeName.startsWith(".")) {
+        else if (typeof lib?._native === "string" && lib._native && !lib._native.startsWith(".")) {
+            const nativeName = lib._native;
             const src = join(PROJECT_ROOT, "library/imports", uuid.slice(0, 2), uuid, nativeName);
             try {
                 copyNative(uuid, idx, src, `/${nativeName}`);
@@ -199,7 +217,8 @@ export async function assembleBundle(name: string, outRoot: string): Promise<Ass
                 /* native 缺失忽略 */
             }
         } else {
-            const ext = nativeName || meta?.nativeExt || nativeExtMap().get(uuid) || null;
+            const libNative = typeof lib?._native === "string" ? lib._native : "";
+            const ext = libNative || meta?.nativeExt || nativeExtMap().get(uuid) || null;
             if (ext) {
                 const np = findNative(uuid, ext);
                 if (np) {
