@@ -19,6 +19,7 @@ import { NodeModulesBundler, extractNodeModulePkg } from "./nodeModules.js";
 import { compileProjectScripts } from "./compile.js";
 import type { CompiledScript } from "./compile.js";
 import { discoverBundles } from "../bundles.js";
+import { mainIsSubpackage } from "../config.js";
 import { PROJECT_ROOT } from "../paths.js";
 import { log, timer, humanBytes } from "../log.js";
 
@@ -183,7 +184,8 @@ export async function packScripts(outRoot: string): Promise<PackResult> {
     // scriptDest 布局(对照真实 build):主包/内置 → assets/<b>/index.js;微信分包 → subpackages/<b>/game.js;
     // remote → src/scripts/<b>/index.js(脚本与资源 dest=remote/<b> 分离)
     const outRel = (b: string): string => {
-        if (b === MAIN) return "assets/main/index.js";
+        // mainCompressionType:subpackage → 主包脚本随 main 分包到 subpackages/main/game.js
+        if (b === MAIN) return mainIsSubpackage() ? "subpackages/main/game.js" : "assets/main/index.js";
         if (b === "resources") return "assets/resources/index.js";
         if (b === "internal") return "assets/internal/index.js";
         return remoteOf.get(b) ? `src/scripts/${b}/index.js` : `subpackages/${b}/game.js`;

@@ -68,3 +68,26 @@ export function projectConfig(): ProjectConfig {
 export function platform(): string {
     return projectConfig().platform;
 }
+
+let _mainCompression: string | null = null;
+/**
+ * 主包压缩类型(settings/builder.json 的 mainCompressionType)。
+ * "subpackage" 时编辑器把虚拟主包 main 打成 subpackages/main 分包(不计入微信主包 4MB 上限);
+ * 其余("default" 等)则 main 落 assets/main(主包内)。读不到则按 "default"。
+ */
+export function mainCompressionType(): string {
+    if (_mainCompression === null) {
+        try {
+            const b = JSON.parse(readFileSync(join(PROJECT_ROOT, "settings/builder.json"), "utf8"));
+            _mainCompression = typeof b.mainCompressionType === "string" ? b.mainCompressionType : "default";
+        } catch {
+            _mainCompression = "default";
+        }
+    }
+    return _mainCompression!;
+}
+
+/** 主包是否打成分包(subpackages/main) */
+export function mainIsSubpackage(): boolean {
+    return mainCompressionType() === "subpackage";
+}

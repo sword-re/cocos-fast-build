@@ -427,6 +427,55 @@ export class GraphSerializer {
     }
 }
 
+/** 累计被剥离的"缺失类"(脚本已删但 prefab 仍引用),供构建层汇总日志 */
+const _strippedMissingClasses = new Map<string, number>();
+export function strippedMissingClasses(): Array<[string, number]> {
+    return [..._strippedMissingClasses.entries()];
+}
+
+/**
+ * 剥离"缺失类"组件/引用(对齐编辑器:缺失脚本组件被剔除而非报错丢整资源)。
+ * 缺失类 = 对象 __type__ 是 CCClass 但不在注册表(且非 ValueType/TRS)——通常是脚本已删除、
+ * prefab 仍残留该组件的 __type__(悬空引用)。处理:把所有指向这些对象的 __id__ 引用
+ * 在数组里丢弃、在对象属性里置 null;坏对象随之成孤儿不被序列化。返回是否有剥离。
+ */
+function stripMissingClasses(objs: any[]): boolean {
+    const bad = new Set<number>();
+    for (let i = 0; i < objs.length; i++) {
+        const o = objs[i];
+        if (!o || typeof o !== "object" || typeof o.__type__ !== "string") continue;
+        if (isValueType(o) || isTRS(o)) continue;
+        if (!getClassMeta(o.__type__)) {
+            bad.add(i);
+            _strippedMissingClasses.set(o.__type__, (_strippedMissingClasses.get(o.__type__) ?? 0) + 1);
+        }
+    }
+    if (!bad.size) return false;
+    const clean = (v: any): any => {
+        if (Array.isArray(v)) {
+            const out: any[] = [];
+            for (const e of v) {
+                if (isRef(e) && bad.has(e.__id__)) continue; // 丢弃指向缺失类的数组元素(如 node._components)
+                out.push(clean(e));
+            }
+            return out;
+        }
+        if (v && typeof v === "object") {
+            if (isRef(v) || isAsset(v)) return v;
+            for (const k in v) {
+                const val = v[k];
+                if (isRef(val) && bad.has(val.__id__)) v[k] = null; // 属性引用缺失类 → 置 null
+                else v[k] = clean(val);
+            }
+            return v;
+        }
+        return v;
+    };
+    for (let i = 0; i < objs.length; i++) if (!bad.has(i)) clean(objs[i]);
+    return true;
+}
+
 export function serializeObjectGraph(objs: any[]): IFileData {
+    stripMissingClasses(objs);
     return new GraphSerializer(objs).serialize();
 }

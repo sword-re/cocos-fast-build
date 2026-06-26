@@ -18,7 +18,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, copyFileSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { PROJECT_ROOT } from "./paths.js";
-import { platform, projectConfig } from "./config.js";
+import { platform, projectConfig, mainIsSubpackage } from "./config.js";
 import { discoverBundles } from "./bundles.js";
 import { assetMetaMap } from "./assetMeta.js";
 import { log } from "./log.js";
@@ -92,6 +92,9 @@ export function classifyBundles(): { subpackages: string[]; remoteBundles: strin
         .filter((b) => !b.isRemote && b.name !== "resources")
         .map((b) => b.name)
         .sort((a, b) => (a === "Entry" ? -1 : b === "Entry" ? 1 : a.localeCompare(b)));
+    // mainCompressionType:subpackage → 虚拟主包 main 也是分包(末位,与编辑器一致),需注册进
+    // game.json subPackages 与 settings.subpackages,否则 loadBundle("main") 找不到分包根。
+    if (mainIsSubpackage()) subpackages.push("main");
     const remoteBundles = bundles
         .filter((b) => b.isRemote)
         .map((b) => b.name)
@@ -147,7 +150,9 @@ export function genCcRequireJs(): string {
     mods.push("assets/internal/index.js");
     if (hasResources) mods.push("assets/resources/index.js");
     for (const r of remoteBundles) mods.push(`src/scripts/${r}/index.js`);
-    mods.push("assets/main/index.js");
+    // 主包脚本:默认在 assets/main(主包内)需强制 require;mainCompressionType:subpackage 时 main
+    // 是 subpackages/main 分包,由 loadBundle("main") 自加载,不在此 force-require(与编辑器一致)。
+    if (!mainIsSubpackage()) mods.push("assets/main/index.js");
     const entries = mods.map((m) => `${JSON.stringify(m)}:()=>require(${JSON.stringify(m)})`).join(",");
     return (
         `let s={${entries}};` +

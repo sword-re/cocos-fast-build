@@ -20,6 +20,8 @@ import { crawl, primeCrawl } from "./crawl.js";
 import { packScripts } from "./scripts/pack.js";
 import { extractClassMetaOverlay } from "./scripts/classMeta.js";
 import { augmentRegistry } from "./registry.js";
+import { mainIsSubpackage } from "./config.js";
+import { strippedMissingClasses } from "./serialize/objectGraph.js";
 import { writeGameTemplate, copyPluginScriptsFromSource } from "./game.js";
 import { buildStart, buildAsset, buildProgress, buildWarning, buildSuccess } from "./buildLog.js";
 import { phase, log, timer } from "./log.js";
@@ -36,6 +38,8 @@ export interface BuildOptions {
 /** 资源 dest 的父目录(assembleBundle 的 outRoot,使其 outRoot/<name> == dest) */
 function resourceParent(b: BundleDef, buildDir: string): string {
     if (b.isRemote) return join(buildDir, "remote");
+    // mainCompressionType:subpackage → 虚拟主包 main 打成 subpackages/main(不计入微信主包 4MB 上限)
+    if (b.name === "main" && mainIsSubpackage()) return join(buildDir, "subpackages");
     // 内置 bundle(resources / 虚拟主包 main / 引擎内置 internal)落 assets/<name>
     if (b.name === "resources" || b.name === "main" || b.name === "internal") return join(buildDir, "assets");
     return join(buildDir, "subpackages");
@@ -126,6 +130,11 @@ export async function buildWechatgame(opts: BuildOptions): Promise<BuildResult> 
     };
     await Promise.all(Array.from({ length: Math.min(6, bundles.length) }, assembleOne));
     log(`资源装配完成: ${assembled.length} 成功, ${skipped.length} 跳过`);
+    // 缺失类(脚本已删但 prefab 仍引用)剥离汇总:对齐编辑器,剔除坏组件而非丢整资源
+    const stripped = strippedMissingClasses();
+    if (stripped.length) {
+        buildWarning(`剥离缺失类组件 ${stripped.length} 种(脚本已删/未注册,prefab 残留引用): ${stripped.map(([t, n]) => `${t}×${n}`).join(", ")}`);
+    }
 
     // ── 2. 打包脚本(主包/内置/分包/remote 的 index.js / game.js) ──
     phase("打包脚本");
