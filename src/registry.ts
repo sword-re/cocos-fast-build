@@ -42,6 +42,46 @@ export function getClassMeta(type: string): ClassMeta | undefined {
     return registry()[type];
 }
 
+export interface AugmentStats {
+    newEntries: number; // 新建的类条目数
+    augmentedEntries: number; // 被补字段的已有条目数
+    addedProps: number; // 累计补入的字段数
+}
+
+/**
+ * 用项目脚本实测出的类元数据 overlay 增补内存中的注册表(只增不删):
+ *  - 已有条目:补齐 overlay 里缺失的字段(按属性名;已有字段及其默认值原样保留)
+ *  - 全新「组件」类:整条新建(数据类不新建——基类前缀难可靠推断,保守跳过)
+ * 解决静态 dump 陈旧导致新增 @property 被序列化器跳过的问题(详见 scripts/classMeta.ts)。
+ */
+export function augmentRegistry(overlay: Record<string, ClassMeta & { __comp?: boolean }>): AugmentStats {
+    const reg = registry();
+    const stats: AugmentStats = { newEntries: 0, augmentedEntries: 0, addedProps: 0 };
+    for (const [key, entry] of Object.entries(overlay)) {
+        const isComp = entry.__comp === true;
+        const existing = reg[key];
+        if (!existing) {
+            if (!isComp) continue; // 数据类不新建
+            reg[key] = { v: entry.v.map((p) => ({ ...p })) };
+            stats.newEntries++;
+            continue;
+        }
+        const have = new Set(existing.v.map((p) => p.k));
+        let added = 0;
+        for (const p of entry.v) {
+            if (have.has(p.k)) continue;
+            existing.v.push({ ...p });
+            have.add(p.k);
+            added++;
+        }
+        if (added > 0) {
+            stats.augmentedEntries++;
+            stats.addedProps += added;
+        }
+    }
+    return stats;
+}
+
 export function isCustomSerialize(type: string): boolean {
     return getClassMeta(type)?.cs === 1;
 }

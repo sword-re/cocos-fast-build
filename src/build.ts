@@ -18,6 +18,8 @@ import { type BundleDef } from "./bundles.js";
 import { assembleBundle } from "./assemble.js";
 import { crawl, primeCrawl } from "./crawl.js";
 import { packScripts } from "./scripts/pack.js";
+import { extractClassMetaOverlay } from "./scripts/classMeta.js";
+import { augmentRegistry } from "./registry.js";
 import { writeGameTemplate } from "./game.js";
 import { buildStart, buildAsset, buildProgress, buildWarning, buildSuccess } from "./buildLog.js";
 import { phase, log, timer } from "./log.js";
@@ -89,6 +91,13 @@ export async function buildWechatgame(opts: BuildOptions): Promise<BuildResult> 
     // 按 priority 降序(复刻 cocos 构建顺序);含虚拟主包 main / 引擎内置 internal
     const bundles = [...crawl().bundles].sort((a, b) => b.priority - a.priority);
     log(`依赖图扫描完成: ${bundles.length} 个 bundle`);
+
+    // ── 0.5 刷新项目脚本类注册表(防静态 dump 陈旧:新增 @property 被序列化跳过 → 运行时 null 崩)──
+    // 必须在装配(序列化)之前:序列化器按注册表字段裁剪/输出对象。
+    phase("刷新脚本类注册表");
+    const overlay = extractClassMetaOverlay(log);
+    const aug = augmentRegistry(overlay);
+    log(`注册表增补: 新建 ${aug.newEntries} 类, 补字段 ${aug.augmentedEntries} 类 / 共 ${aug.addedProps} 个字段`);
 
     // ── 1. 装配各 bundle 资源 ──
     phase("装配 bundle 资源");
