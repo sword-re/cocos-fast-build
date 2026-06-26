@@ -2,7 +2,7 @@
  * 简单叶子资源 importer:audio / ttf-font / text / json。
  * 全部字段从源文件 + .meta 派生(audio 的 duration 就在 .meta 里,无需解码)。
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { basename, extname } from "node:path";
 import type { Importer, ImportCtx, ImportResult } from "../types.js";
 
@@ -82,6 +82,8 @@ export const textImporter: Importer = {
 export const rawAssetImporter: Importer = {
     name: "asset",
     import(ctx: ImportCtx): Map<string, ImportResult> {
+        // 源缺失的孤儿 meta(如 .ts 删了但 .ts.meta 残留):cocos 不 import,跳过以免装配读盘 ENOENT
+        if (!existsSync(ctx.srcPath)) return new Map();
         const ext = extname(ctx.srcPath);
         return new Map([
             [

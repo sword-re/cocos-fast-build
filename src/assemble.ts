@@ -147,7 +147,12 @@ export async function assembleBundle(name: string, outRoot: string): Promise<Ass
     const tryImportNative = (uuid: string, idx: number): boolean => {
         const nat = importAsset(uuid)?.native;
         if (!nat) return false;
-        const buf = Buffer.isBuffer(nat.source) ? nat.source : readFileSync(nat.source);
+        let buf: Buffer;
+        try {
+            buf = Buffer.isBuffer(nat.source) ? nat.source : readFileSync(nat.source);
+        } catch {
+            return true; // 源缺失(孤儿 meta):跳过 native,不让整包装配失败
+        }
         writeNative(uuid, idx, buf, nat.kind === "flat" ? nat.ext : `/${nat.filename}`);
         return true;
     };
