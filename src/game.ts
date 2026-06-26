@@ -15,8 +15,8 @@
  *  - 扫描 *.js.meta(isPlugin): jsList
  *  - bundleVers: 各 bundle config.<md5>.json 的 md5(由编排层装配后传入)
  */
-import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, copyFileSync } from "node:fs";
+import { join, relative, dirname } from "node:path";
 import { PROJECT_ROOT } from "./paths.js";
 import { platform, projectConfig } from "./config.js";
 import { discoverBundles } from "./bundles.js";
@@ -59,6 +59,30 @@ export function scanPluginJsList(): string[] {
     };
     walk(ASSETS);
     return out;
+}
+
+/**
+ * 把 isPlugin 脚本从**当前项目源**拷到产物 `src/assets/<rel>`(与 jsList/loadScript 路径一致)。
+ *
+ * 背景:插件脚本(RTC/Proto 等)实体此前依赖 enginePack(冻结的官方 build)整目录拷贝的 src/assets,
+ * 而 jsList 路径由 scanPluginJsList 扫**当前源**生成。一旦项目移动插件目录
+ * (如 assets/Script/Lib/RTC → assets/Lib/RTC),冻结快照里仍是旧路径,jsList 指向新路径 →
+ * loadScript 找不到文件 → 运行时 "module '...' is not defined"。
+ * 插件脚本本就在源仓库里(随 cocos 原样使用、不经编译),故直接从源拷贝,使其跟随源、彻底脱离快照。
+ * 返回拷贝的文件数。
+ */
+export function copyPluginScriptsFromSource(outRoot: string): number {
+    let n = 0;
+    for (const rel of scanPluginJsList()) {
+        // rel 形如 "assets/Lib/RTC/minigame-rtc.js";loadScript 加载 "src/" + rel
+        const src = join(PROJECT_ROOT, rel);
+        if (!existsSync(src)) continue; // 源无(纯快照插件)→ 保留 enginePack 的拷贝
+        const dst = join(outRoot, "src", rel);
+        mkdirSync(dirname(dst), { recursive: true });
+        copyFileSync(src, dst);
+        n++;
+    }
+    return n;
 }
 
 /** bundle 分类:subpackages(非 remote、非 resources 的 asset bundle,Entry 优先其余字母序)/ remoteBundles(字母序) */

@@ -20,7 +20,7 @@ import { crawl, primeCrawl } from "./crawl.js";
 import { packScripts } from "./scripts/pack.js";
 import { extractClassMetaOverlay } from "./scripts/classMeta.js";
 import { augmentRegistry } from "./registry.js";
-import { writeGameTemplate } from "./game.js";
+import { writeGameTemplate, copyPluginScriptsFromSource } from "./game.js";
 import { buildStart, buildAsset, buildProgress, buildWarning, buildSuccess } from "./buildLog.js";
 import { phase, log, timer } from "./log.js";
 
@@ -150,6 +150,11 @@ export async function buildWechatgame(opts: BuildOptions): Promise<BuildResult> 
     } else {
         buildWarning("未提供 copyFrom,跳过引擎/plugin 拷贝(产物不可直接运行)");
     }
+
+    // ── 5.5 插件脚本从源覆盖到 src/assets(跟随当前源,避免冻结快照里旧路径导致 jsList 失配)──
+    // 必须在引擎/plugin 拷贝之后:覆盖 enginePack 带来的同名旧文件,补齐源里已移动/新增的插件路径。
+    const pluginN = copyPluginScriptsFromSource(buildDir);
+    log(`插件脚本从源拷贝: ${pluginN} 个 → src/assets`);
 
     buildSuccess("wechatgame");
     done();
