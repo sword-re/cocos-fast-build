@@ -261,9 +261,10 @@ export function extractClassMetaOverlay(onLog?: (m: string) => void): Record<str
         seen.add(cls.className);
         let base: PropMeta[];
         const baseCls = cls.ext ? byName.get(cls.ext) : undefined;
-        if (baseCls) base = flatten(baseCls, seen);
-        else if (cls.ext && reg[cls.ext]) base = reg[cls.ext].v.slice(); // cc.* 基类(cc.Button 等)
-        else base = COMPONENT_PREFIX.slice(); // 兜底:按 cc.Component
+        if (baseCls) base = flatten(baseCls, seen); // 父是项目类 → 递归
+        else if (cls.ext && reg[cls.ext]) base = reg[cls.ext].v.slice(); // cc.* 基类(cc.Button/cc.Object 等)
+        else if (isComponent(cls)) base = COMPONENT_PREFIX.slice(); // 组件(extends cc.Component)→ 固定前缀
+        else base = []; // 纯数据类(无 extends / 未知基类)→ 无继承前缀(如 @ccclass 的 inspector 辅助类)
         const keys = new Set(base.map((p) => p.k));
         const v = base.slice();
         for (const p of cls.props) {

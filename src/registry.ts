@@ -33,7 +33,7 @@ let _registry: Record<string, ClassMeta> | null = null;
 
 export function registry(): Record<string, ClassMeta> {
     if (!_registry) {
-        _registry = JSON.parse(readFileSync(REGISTRY_PATH, "utf8"));
+        _registry = JSON.parse(readFileSync(REGISTRY_PATH, "utf8")) as Record<string, ClassMeta>;
     }
     return _registry;
 }
@@ -58,10 +58,10 @@ export function augmentRegistry(overlay: Record<string, ClassMeta & { __comp?: b
     const reg = registry();
     const stats: AugmentStats = { newEntries: 0, augmentedEntries: 0, addedProps: 0 };
     for (const [key, entry] of Object.entries(overlay)) {
-        const isComp = entry.__comp === true;
         const existing = reg[key];
         if (!existing) {
-            if (!isComp) continue; // 数据类不新建
+            // 组件类与数据类都新建:数据类(如 @ccclass 的 inspector 辅助类)若被 prefab 序列化引用
+            // 而不在注册表,序列化器会抛 "类不在注册表" → 整个资源被跳过 → 运行时 bundle 缺该资源。
             reg[key] = { v: entry.v.map((p) => ({ ...p })) };
             stats.newEntries++;
             continue;
