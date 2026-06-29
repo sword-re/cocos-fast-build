@@ -4,6 +4,8 @@
 
 **它替代官方构建里最慢的那部分**（资源装配 + 脚本编译 + 压缩），不替代引擎本身——引擎/适配层包（adapter / cocos2d-js）由 `--engine-pack` 指向一份现成的官方 build 复用。
 
+> 📖 **文档**：[使用文档 USAGE.md](docs/USAGE.md) ｜ [开发文档（总）DEVELOPMENT.md](docs/DEVELOPMENT.md)（数据模型 + 模块 + 原理）｜ 专题见 [docs/](docs/)
+
 ## 为什么
 
 同一项目（23 个 bundle）实测：
