@@ -20,7 +20,7 @@ import { crawl, primeCrawl } from "./crawl.js";
 import { packScripts } from "./scripts/pack.js";
 import { extractClassMetaOverlay } from "./scripts/classMeta.js";
 import { augmentRegistry } from "./registry.js";
-import { mainIsSubpackage } from "./config.js";
+import { mainIsSubpackage, platform } from "./config.js";
 import { strippedMissingClasses } from "./serialize/objectGraph.js";
 import { writeGameTemplate, copyPluginScriptsFromSource } from "./game.js";
 import { buildStart, buildAsset, buildProgress, buildWarning, buildSuccess } from "./buildLog.js";
@@ -84,7 +84,7 @@ export interface BuildResult {
 /** 执行完整 wechatgame 构建 */
 export async function buildWechatgame(opts: BuildOptions): Promise<BuildResult> {
     const done = timer("完整构建");
-    buildStart("wechatgame");
+    buildStart(platform());
     const { buildDir } = opts;
     mkdirSync(buildDir, { recursive: true });
 
@@ -165,7 +165,7 @@ export async function buildWechatgame(opts: BuildOptions): Promise<BuildResult> 
     const pluginN = copyPluginScriptsFromSource(buildDir);
     log(`插件脚本从源拷贝: ${pluginN} 个 → src/assets`);
 
-    buildSuccess("wechatgame");
+    buildSuccess(platform());
     done();
     return { bundleVers, assembled, skipped };
 }

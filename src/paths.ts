@@ -39,7 +39,9 @@ export const PROJECT_ROOT = findProjectRoot();
 export const LIBRARY_IMPORTS = resolve(PROJECT_ROOT, "library/imports");
 export const TEMP_DIR = resolve(PROJECT_ROOT, "temp");
 export const QUICK_SCRIPTS = resolve(PROJECT_ROOT, "temp/quick-scripts");
-export const BUILD_DIR = resolve(PROJECT_ROOT, "build/wechatgame");
+// 官方构建目录 build/<platform>(对照基准/spikes 用;编排主流程产物是 build/fast-<platform>)。
+// 直接读 CFB_PLATFORM 而非 import config.ts,避免与 config→paths 的环依赖;缺省 wechatgame。
+export const BUILD_DIR = resolve(PROJECT_ROOT, `build/${process.env.CFB_PLATFORM || "wechatgame"}`);
 
 /** library 里某 uuid 的 import json 路径 */
 export function libraryImportPath(uuid: string): string {

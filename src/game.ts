@@ -19,6 +19,7 @@ import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSy
 import { join, relative, dirname } from "node:path";
 import { PROJECT_ROOT } from "./paths.js";
 import { platform, projectConfig, mainIsSubpackage } from "./config.js";
+import { platformSpec } from "./platforms.js";
 import { discoverBundles } from "./bundles.js";
 import { assetMetaMap } from "./assetMeta.js";
 import { log } from "./log.js";
@@ -29,9 +30,20 @@ function readJson(p: string): any {
     return JSON.parse(readFileSync(p, "utf8"));
 }
 
-/** 平台 settings 文件(settings/<platform>.json,如 settings/wechatgame.json) */
+/**
+ * 平台 settings:优先 settings/<platform>.json(如 settings/wechatgame.json);
+ * 不存在则回退 settings/builder.json 的 [platform] 段(抖音走这条——编辑器把各平台配置
+ * 集中在 builder.json 的 bytedance/android/ios 等段,字段名兼容:appid/orientation/REMOTE_SERVER_ROOT/subContext)。
+ */
 function platformSettings(): any {
-    return readJson(join(PROJECT_ROOT, `settings/${platform()}.json`));
+    const dedicated = join(PROJECT_ROOT, `settings/${platform()}.json`);
+    if (existsSync(dedicated)) return readJson(dedicated);
+    const builderPath = join(PROJECT_ROOT, "settings/builder.json");
+    if (existsSync(builderPath)) {
+        const section = readJson(builderPath)[platform()];
+        if (section) return section;
+    }
+    throw new Error(`找不到平台 settings: settings/${platform()}.json 不存在,且 settings/builder.json 无 [${platform()}] 段`);
 }
 
 /** 扫描 assets 下所有 isPlugin 的 .js,返回 jsList(相对 db,带 assets/ 前缀,含 RTC .min 变体) */
@@ -160,16 +172,17 @@ export function genCcRequireJs(): string {
     );
 }
 
-/** game.json */
+/** game.json(平台差异由 platformSpec 提供:抖音 showStatusBar/connectSocket=20000、微信 iOSHighPerformance) */
 export function genGameJson(): string {
     const wx = platformSettings();
+    const spec = platformSpec(platform());
     const { subpackages } = classifyBundles();
     const obj = {
         deviceOrientation: wx.orientation ?? "portrait",
-        networkTimeout: { request: 5000, connectSocket: 5000, uploadFile: 5000, downloadFile: 5000 },
+        ...spec.gameJsonHead,
+        networkTimeout: spec.networkTimeout,
         subpackages: subpackages.map((name) => ({ name, root: `subpackages/${name}` })),
-        iOSHighPerformance: false,
-        "iOSHighPerformance+": false,
+        ...spec.gameJsonTail,
     };
     return JSON.stringify(obj, null, 4);
 }
@@ -181,67 +194,50 @@ export function genGameJson(): string {
  * 抽成 config.bootExtras,在 require("./src/settings") 之后、require("./main") 之前注入。
  */
 function genGameJs(): string {
+    const spec = platformSpec(platform());
     const extras = projectConfig()
         .bootExtras.map((e) => (e.global ? `window.${e.global}=require(${JSON.stringify(e.module)})` : `require(${JSON.stringify(e.module)})`))
         .join(",");
     const extrasPart = extras ? extras + "," : "";
+    const strict = spec.gameJsUseStrict ? `"use strict";` : "";
     return (
-        `"use strict";require("adapter-min.js"),__globalAdapter.init(),require("cocos/cocos2d-js-min.js"),` +
+        `${strict}require("adapter-min.js"),__globalAdapter.init(),require("cocos/cocos2d-js-min.js"),` +
         `__globalAdapter.adaptEngine(),require("./ccRequire"),require("./src/settings"),` +
         `${extrasPart}require("./main"),` +
-        `cc.view._maxPixelRatio=4,cc.sys.platform!==cc.sys.WECHAT_GAME_SUB&&(cc.macro.CLEANUP_IMAGE_CACHE=!0),` +
+        `cc.view._maxPixelRatio=4,cc.sys.platform!==cc.sys.${spec.subPlatformConst}&&(cc.macro.CLEANUP_IMAGE_CACHE=!0),` +
         `require("hook.js"),window.boot();`
     );
 }
 
-/** main.js:window.boot —— assetManager.init + loadScript(jsList) + loadBundle(internal/resources/main) */
-const MAIN_JS =
+/**
+ * main.js:window.boot —— assetManager.init + loadScript(jsList) + loadBundle(internal/resources/main)。
+ * 子上下文判定(决定 showFPS)按平台不同:微信用 cc.sys 平台常量,抖音用 __globalAdapter.isSubContext。
+ */
+function genMainJs(): string {
+    const spec = platformSpec(platform());
+    return (
     `"use strict";window.boot=function(){var e=window._CCSettings;window._CCSettings=void 0;` +
     `var n=function(){cc.view.enableRetina(!0),cc.view.resizeWithBrowserSize(!0);var n=e.launchScene;` +
     `cc.director.loadScene(n,null,function(){console.log("Success to load scene: "+n)})},` +
-    `s=cc.sys.platform===cc.sys.WECHAT_GAME_SUB,a={id:"GameCanvas",debugMode:e.debug?cc.debug.DebugMode.INFO:cc.debug.DebugMode.ERROR,` +
+    `s=${spec.subContextExpr},a={id:"GameCanvas",debugMode:e.debug?cc.debug.DebugMode.INFO:cc.debug.DebugMode.ERROR,` +
     `showFPS:!s&&e.debug,frameRate:60,groupList:e.groupList,collisionMatrix:e.collisionMatrix};` +
     `cc.assetManager.init({bundleVers:e.bundleVers,subpackages:e.subpackages,remoteBundles:e.remoteBundles,server:e.server,subContextRoot:e.subContextRoot});` +
     `var c=cc.AssetManager.BuiltinBundleName.RESOURCES,t=cc.AssetManager.BuiltinBundleName.INTERNAL,r=cc.AssetManager.BuiltinBundleName.MAIN,o=cc.AssetManager.BuiltinBundleName.START_SCENE,u=[t];` +
     `e.hasResourcesBundle&&u.push(c),e.hasStartSceneBundle&&u.push(r);var i=0;` +
     `function l(s){if(s)return console.error(s.message,s.stack);++i===u.length+1&&cc.assetManager.loadBundle(e.hasStartSceneBundle?o:r,function(e){e||cc.game.run(a,n)})}` +
-    `cc.assetManager.loadScript(e.jsList.map(function(e){return"src/"+e}),l);for(var d=0;d<u.length;d++)cc.assetManager.loadBundle(u[d],l)};`;
+    `cc.assetManager.loadScript(e.jsList.map(function(e){return"src/"+e}),l);for(var d=0;d<u.length;d++)cc.assetManager.loadBundle(u[d],l)};`
+    );
+}
 
 /** hook.js:暴露 bundleVers/remoteBundles;remoteBundleUrlDev 由发布脚本按本机 IP 改写 */
 const HOOK_JS =
     `window.bundleVers=window._CCSettings.bundleVers,window.remoteBundles=window._CCSettings.remoteBundles;\n` +
     `window.remoteBundleUrlDev = "";\n`;
 
+/** project.config.json(内容整体由平台决定:微信大对象/抖音极简) */
 function genProjectConfigJson(appid: string): string {
-    const cfg = projectConfig();
-    const obj = {
-        description: "项目配置文件。",
-        miniprogramRoot: "",
-        setting: {
-            urlCheck: false,
-            es6: false,
-            postcss: true,
-            minified: false,
-            newFeature: false,
-            nodeModules: false,
-            autoAudits: true,
-            uglifyFileName: false,
-            checkInvalidKey: true,
-            remoteDebugLogEnable: false,
-            sourcemapDisabled: true,
-            babelSetting: { ignore: [], disablePlugins: [], outputPath: "" },
-        },
-        compileType: "game",
-        libVersion: cfg.libVersion,
-        appid,
-        projectname: cfg.projectName,
-        condition: {},
-        simulatorType: "wechat",
-        packOptions: { ignore: [], include: [] },
-        editorSetting: { tabIndent: "insertSpaces", tabSize: 2 },
-        staticServerOptions: { servePath: "remote" },
-    };
-    return JSON.stringify(obj, null, 4);
+    const spec = platformSpec(platform());
+    return JSON.stringify(spec.projectConfig(appid, projectConfig()), null, 4);
 }
 
 const PROJECT_PRIVATE_JSON = JSON.stringify(
@@ -253,18 +249,20 @@ const PROJECT_PRIVATE_JSON = JSON.stringify(
 /** 写出 game 样板全部生成+模板文件到 outRoot(不含引擎/plugin 拷贝) */
 export function writeGameTemplate(outRoot: string, opts: GameTemplateOptions): void {
     const wx = platformSettings();
+    const spec = platformSpec(platform());
     mkdirSync(join(outRoot, "src"), { recursive: true });
 
     const files: Array<[string, string]> = [
         ["game.js", genGameJs()],
-        ["main.js", MAIN_JS],
+        ["main.js", genMainJs()],
         ["hook.js", HOOK_JS],
         ["ccRequire.js", genCcRequireJs()],
         ["game.json", genGameJson()],
         ["project.config.json", genProjectConfigJson(wx.appid)],
-        ["project.private.config.json", PROJECT_PRIVATE_JSON],
         ["src/settings.js", genSettingsJs(opts)],
     ];
+    // project.private.config.json:微信有,抖音无(对照真实 build)
+    if (spec.hasPrivateConfig) files.push(["project.private.config.json", PROJECT_PRIVATE_JSON]);
     for (const [rel, content] of files) {
         writeFileSync(join(outRoot, rel), content);
         log(`写出 ${rel} (${content.length}B)`);

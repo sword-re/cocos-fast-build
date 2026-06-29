@@ -21,7 +21,7 @@ export interface BootExtra {
 }
 
 export interface ProjectConfig {
-    /** 目标平台(目前仅 wechatgame);决定 settings/<platform>.json 与 bundle meta 的平台 key */
+    /** 目标平台(wechatgame / bytedance);决定 settings/<platform>.json 与 bundle meta 的平台 key、game 样板差异(见 platforms.ts) */
     platform: string;
     /** 写入 project.config.json 的 projectname;默认取项目根目录名 */
     projectName: string;

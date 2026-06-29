@@ -45,7 +45,7 @@ npx tsx src/cli.ts --project <cocos项目根> --engine-pack <一份官方build> 
 | 选项 | 说明 |
 | --- | --- |
 | `-p, --project <dir>` | cocos 项目根目录（含 `assets/` 与 `library/imports/`）。默认当前目录 |
-| `--platform <name>` | 目标平台，目前仅 `wechatgame`（默认） |
+| `--platform <name>` | 目标平台：`wechatgame`（默认）/ `bytedance`（抖音小游戏） |
 | `-o, --out <dir>` | 产物目录。默认 `<project>/build/fast-<platform>` |
 | `--engine-pack <dir>` | 引擎/plugin 拷贝来源（一份现成官方 build）。省略则产物缺引擎包、不可直接运行 |
 | `--no-minify` | 跳过 swc 压缩 |
@@ -79,6 +79,13 @@ cocos-fast-build --project /path/proj --engine-pack /path/proj/build/wechatgame 
 
 工具会从引擎包拷贝 `adapter-min.js`、`cocos/`、`src/assets/`、`hook.js`。引擎升级后重新产一次即可。
 
+抖音小游戏同理——引擎包用一份官方 `build/bytedance/`（其 `adapter-min.js` 含抖音适配层），平台配置自动从 `settings/builder.json` 的 `bytedance` 段读取（无需单独 `settings/bytedance.json`）：
+
+```bash
+cocos-fast-build --project /path/proj --platform bytedance \
+  --engine-pack /path/proj/build/bytedance --out /path/proj/build/fast-bytedance
+```
+
 ## Jenkins 示例
 
 ```groovy
@@ -97,7 +104,7 @@ stage('fast-build') {
 
 ## 适用范围与已知限制
 
-- **平台**：目前仅微信小游戏（`wechatgame`）。平台差异已抽象，后续可加抖音等。
+- **平台**：微信小游戏（`wechatgame`）与抖音小游戏（`bytedance`）。平台差异（game.js/main.js/game.json/project.config.json 等）抽在 `platforms.ts` 的描述表，新增平台只需加一条 spec。
 - **Cocos 版本**：序列化格式对照 **2.4.13** 逆向；其它 2.x 小版本可能有差异，跨版本前请用真实项目回归。
 - **已知缺口**：少量高级类型（如 `cc.EffectAsset`）序列化延后；个别 bundle 与官方 config 仍有结构差异（见 oracle 对照）。生产前建议在微信开发者工具验证一次预览构建。
 
