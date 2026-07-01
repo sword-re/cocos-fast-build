@@ -78,8 +78,13 @@ export function assetMetaMap(): Map<string, AssetMeta> {
                 const sm = m.subMetas[k];
                 if (!sm?.uuid) continue;
                 // 单图 sprite:子帧 key==父文件名 → 与父共享路径(如 icon_safety);
-                // plist 多帧:各子名不同 → 父路径/子名
-                const subPath = k === baseName ? relPath : `${relPath}/${k}`;
+                // plist 多帧:各子名不同 → 父路径/子名。
+                // plist 图集的子帧 key 带扩展名(如 "img_judge.png"),须去掉:
+                //  - SpriteAtlas._spriteFrames 的 key 用它做帧名,RichText <img src='img_judge'> 按无扩展名查找;
+                //  - 上浮帧按路径加载时 Cocos 资源路径同样不含扩展名。
+                // 否则 "img_judge.png" ≠ "img_judge" → 查不到 → 法官头像/麦位标识等富文本图丢失。
+                const subName = k.replace(/\.[^/.]+$/, "");
+                const subPath = subName === baseName ? relPath : `${relPath}/${subName}`;
                 map.set(sm.uuid, {
                     path: subPath,
                     type: typeFromImport(sm.uuid, sm.importer),
